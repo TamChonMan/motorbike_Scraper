@@ -3,66 +3,62 @@ from bs4 import BeautifulSoup as Soup
 from fake_useragent import UserAgent
 import time
 import numpy as np
+import pandas as pd
+import re
 
 class CarScraper:
     def __init__(self,data_database):
-        self_motorcycle_data_database = data_database
+        self.motorcycle_data_database = data_database
+        self.id = self.motorcycle_data_database['car_id']
+        print('init')
 
     @staticmethod
     def clean_text(txt):
-        return str(txt).replace('<li>', '').replace('</li>', '').replace('\t', '').replace('\n', '')
-
+        return str(txt).replace('<li>', '').replace('</li>', '').replace('\t', '').replace('\n', '').replace('\r',' ')
+        
     @staticmethod
-    def extract_car_info(page, style):
-        try:
-            url = requests.get(page, headers={"User-Agent": "XY"})
-            url.raise_for_status()
-            soup = Soup(url.text, "html.parser")
+    def extract_id(input_string):
+        car_id_match = re.search(r'\d+', input_string)
+        return car_id_match.group() if car_id_match else None
 
-            car_info = {
-                "Name": CarScraper.clean_text(soup.find('dd', class_='value Blod F15px').get_text()),
-                "Color": CarScraper.clean_text(soup.find_all('dd', class_='value Blod F15px')[1].get_text()),
-                "used year": CarScraper.clean_text(soup.find('span', class_='Blod F15px').get_text().replace('年', '')),
-                "gas": CarScraper.clean_text(soup.find_all('dd',class_='value Blod F15px')[2].get_text()).replace(' ',''),
-                "mileage": CarScraper.clean_text(soup.find('ul', class_='auto_standard floatLeft').get_text()).replace('行車里程：','').replace('萬','').replace('公里','').replace(' ',''),
-                "price": float(CarScraper.clean_text(soup.find('dd',class_='value Blod F15px Red').get_text()).replace('萬',''))*10000
-            }
-
-            return car_info
-        except Exception as e:
-            print(f"Error extracting car info: {str(e)}")
-            return None
-
-    @staticmethod
-    def scrape_id(page, tag, class_name):
+    def scrape_id(self, page, tag, class_name):
         try:
             sale_id = []
             url = requests.get(page, headers={"User-Agent": "XY"})
             url.raise_for_status()
             soup = Soup(url.text, "html.parser")
-            for item in (soup.find_all(tag, class_ = class_name)):
+            for item in soup.find_all(tag, class_=class_name):
                 for link in item.find_all('a', href=True):
-                    sale_id.append(link['href'])
-            return sale_id
+                    id = self.extract_id(link['href'])
+                    if np.int64(id) not in self.id.values:
+                        sale_id.append(id)
+                    else:
+                        print('This ID has already scraped')
+                        return sale_id, True  # Indicate that the condition was met
+            return sale_id, False  # Indicate that the condition was not met
         except Exception as e:
             print(f"Error scraping IDs: {str(e)}")
-            return []
+            return [], False
 
-    @staticmethod
-    def scrape_all_id(start_page, end_page, tag, class_name):
+    def scrape_all_id(self, start_page, end_page, tag, class_name):
         all_id = []
         try:
             for i in range(start_page, end_page, 30):
-                page_link = "https://auto.8891.com.tw/usedauto-moto.html?firstRow="+str(i)+"&totalRows=9299#searchContentBody"
-                all_id += CarScraper.scrape_id(page_link, tag, class_name)
                 print(f'scraping {((i+30)/30):0.0f} / {end_page/30:0.0f} page')
+                page_link = "https://auto.8891.com.tw/usedauto-moto.html?firstRow="+str(i)+"&totalRows=9299#searchContentBody"
+                scraped_ids, condition_met = self.scrape_id(page_link, tag, class_name)
+                all_id += scraped_ids
+                if condition_met:
+                    print('Done')
+                    break  # Terminate the loop if the condition was met
                 time.sleep(np.random.uniform(1, 8))
         except Exception as e:
             print(f"Error scraping all IDs: {str(e)}")
+        # print('Done')
         return all_id
 
-    @staticmethod
-    def get_soup(link):
+
+    def get_soup(self,link):
         try:
             user_agent = UserAgent()
             url = requests.get(link, headers={"User-Agent":user_agent.random})
@@ -71,17 +67,60 @@ class CarScraper:
         except Exception as e:
             print(f"Error getting soup: {str(e)}")
             return None
-
-    @staticmethod
-    def get_all_soup(id):
+        
+    def get_all_soup(self,id):
         link_with_soup = []
         try:
             for i in range(len(id)):
-                soup = CarScraper.get_soup('https://auto.8891.com.tw/'+id[i])
+                soup = CarScraper.get_soup(self,'https://auto.8891.com.tw/usedauto-motoInfos-'+id[i]+'.html')
                 if soup:
                     link_with_soup.append((id[i],soup))
                     print(f'scraping {i+1:0.0f} / {len(id):0.0f} links soup')
-                    time.sleep(np.random.uniform(1,10))
+                    time.sleep(np.random.uniform(1,6))
         except Exception as e:
             print(f"Error getting all soup: {str(e)}")
         return link_with_soup
+
+
+    def extract_car_info(self,link_with_soup):
+        try:
+            id = link_with_soup[0]
+            soup = link_with_soup[1]
+
+            car_info = {
+                "car_id": id,
+                "Name": self.clean_text(soup.find('dd', class_='value Blod F15px').get_text()),
+                "Color": self.clean_text(soup.find_all('dd', class_='value Blod F15px')[1].get_text()),
+                "used year": self.clean_text(soup.find('span', class_='Blod F15px').get_text().replace('年', '')),
+                "gas": self.clean_text(soup.find_all('dd', class_='value Blod F15px')[2].get_text()).replace(' ', ''),
+                "mileage": self.clean_text(soup.find('ul', class_='auto_standard floatLeft').get_text()).replace('行車里程：', '').replace('萬', '').replace('公里', '').replace(' ', ''),
+                "Outfit": self.clean_text(''.join([outfit.get_text() for outfit in soup.find_all('li', class_='additionConfig')])),
+                "detail": self.clean_text(''.join([detail.get_text() for detail in soup.find_all('div', class_='detail_content', style='line-height: 1.5;')])),
+            }
+
+            try:
+                car_info["price"] = float(self.clean_text(soup.find('dd', class_='value Blod F15px Red').get_text()).replace('萬', '')) * 10000
+            except ValueError:
+                car_info["price"] = np.nan
+
+            return car_info
+        
+        except Exception as e:
+            print(f"Error extracting car info: {str(e)}")
+            return None
+    
+    def new_scraped(self,no_page):
+        id = self.scrape_all_id(0,no_page,'div','text-box')
+        id_all_soup = self.get_all_soup(id)
+        car_info = []
+        for soup1 in id_all_soup :
+            try:
+                car_info.append(self.extract_car_info(soup1))
+            except:
+                print('None')
+        return pd.DataFrame(car_info)
+
+    def Update_database(self,new_df_car,saved):
+        self.motorcycle_data_database = pd.concat([self.motorcycle_data_database, new_df_car], axis = 0 ,ignore_index= True)
+        self.motorcycle_data_database.to_csv(saved,index=False)
+        return self.motorcycle_data_database
