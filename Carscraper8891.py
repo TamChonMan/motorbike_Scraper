@@ -32,9 +32,10 @@ class CarScraper:
                     id = self.extract_id(link['href'])
                     if np.int64(id) not in self.id.values:
                         sale_id.append(id)
+                        print(f'added {id}')
                     else:
                         print('This ID has already scraped')
-                        return sale_id, True  # Indicate that the condition was met
+                        # return sale_id, True  # Indicate that the condition was met
             return sale_id, False  # Indicate that the condition was not met
         except Exception as e:
             print(f"Error scraping IDs: {str(e)}")
@@ -48,13 +49,13 @@ class CarScraper:
                 page_link = "https://auto.8891.com.tw/usedauto-moto.html?firstRow="+str(i)+"&totalRows=9299#searchContentBody"
                 scraped_ids, condition_met = self.scrape_id(page_link, tag, class_name)
                 all_id += scraped_ids
-                if condition_met:
-                    print('Done')
-                    break  # Terminate the loop if the condition was met
+                # if condition_met:
+                #     # print('Done')
+                #     continue  # Terminate the loop if the condition was met
                 time.sleep(np.random.uniform(1, 8))
         except Exception as e:
             print(f"Error scraping all IDs: {str(e)}")
-        # print('Done')
+        print('Done')
         return all_id
 
 
@@ -120,7 +121,40 @@ class CarScraper:
                 print('None')
         return pd.DataFrame(car_info)
 
+    @staticmethod
+    def clean_df(df_car_info):
+        df_car_info[['Company', 'Model']] = df_car_info['Name'].replace(' ','').str.split('-', n=1, expand=True)
+        df_car_info = df_car_info.drop(columns='Name')
+        df_car_info.insert(1, 'Company', df_car_info.pop('Company'))
+        df_car_info.insert(2, 'Model', df_car_info.pop('Model'))
+
+        df_car_info['Company'] = df_car_info['Company'].str.replace(' ','').replace('','其他廠牌')
+        df_car_info['Model'] = df_car_info['Model'].replace(' ','other')
+
+        df_car_info['mileage'] = pd.to_numeric(df_car_info['mileage'],errors='coerce')
+        df_car_info['mileage'] = df_car_info['mileage'].apply(lambda x: x * 10000 if x < 100 else x)
+        df_car_info['mileage']= pd.to_numeric(df_car_info['mileage'], errors='coerce')
+
+        df_car_info['Color'] = df_car_info["Color"].replace('','其他')
+        df_car_info['Color'] = df_car_info["Color"].replace('其他()','其他')
+
+        df_car_info['gas'] = df_car_info["gas"].str.replace('L','')
+        df_car_info['gas'] = df_car_info["gas"].str.replace('以上','')
+        df_car_info['gas'] = df_car_info["gas"].str.replace('以下','')
+        df_car_info['gas'] = df_car_info["gas"].str.replace('-','')
+        df_car_info['gas'] = pd.to_numeric(df_car_info['gas'], errors='coerce')
+
+        df_car_info['used year'] = pd.to_numeric(df_car_info['used year'], errors='coerce')
+        this_year = 2024
+        df_car_info['used year'] = this_year - df_car_info['used year']
+        df_car_info['used year'] = df_car_info['used year'].apply(lambda x: 0 if x == 2024 else x )
+
+        df_car_info['detail'] = df_car_info["detail"].str.replace('-','')
+
+        return df_car_info
+
     def Update_database(self,new_df_car,saved):
+        print(f'Add {len(new_df_car)}, From {len(self.motorcycle_data_database)} to {len(self.motorcycle_data_database)+len(new_df_car)}')
         self.motorcycle_data_database = pd.concat([self.motorcycle_data_database, new_df_car], axis = 0 ,ignore_index= True)
         self.motorcycle_data_database.to_csv(saved,index=False)
         return self.motorcycle_data_database
