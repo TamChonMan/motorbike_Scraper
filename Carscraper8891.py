@@ -5,6 +5,7 @@ import time
 import numpy as np
 import pandas as pd
 import re
+import mysql.connector
 
 class CarScraper:
     def __init__(self,data_database):
